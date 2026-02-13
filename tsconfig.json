@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "target": "ES2022",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "baseUrl": "./",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@/wallet/*": ["./src/wallet/*"],
+      "@/gas/*": ["./src/gas/*"],
+      "@/transactions/*": ["./src/transactions/*"],
+      "@/security/*": ["./src/security/*"],
+      "@/contracts/*": ["./src/contracts/*"],
+      "@/agent/*": ["./src/agent/*"],
+      "@/utils/*": ["./src/utils/*"]
+    },
+    "types": ["bun-types"]
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "tests"]
+}

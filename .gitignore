@@ -1,0 +1,52 @@
+# Dependencies
+node_modules/
+dist/
+.cache/
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+.env.production
+
+# Testing
+coverage/
+*.log
+.nyc_output/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Foundry
+cache/
+out/
+broadcast/
+
+# Hardhat
+typechain/
+typechain-types/
+
+# Misc
+.DS_Store
+*.tgz
+*.log
+*.pid
+*.seed
+*.pid.lock
+
+# Keys (NEVER commit these)
+*.pem
+*.key
+private*.json
+keystore/
+secrets.json
