@@ -15,7 +15,7 @@ describe("GasManager", () => {
   describe("estimateGas", () => {
     it("should estimate gas for simple ETH transfer", async () => {
       const gas = await gasManager.estimateGas(1, {
-        to: "0x1234567890123456789012345678901234567890" as \`0x\${string}\`,
+        to: "0x1234567890123456789012345678901234567890" as `0x${string}`,
         value: 1000000000000000000n
       });
       expect(gas).toBeDefined();
@@ -25,8 +25,8 @@ describe("GasManager", () => {
 
     it("should estimate gas for contract call", async () => {
       const gas = await gasManager.estimateGas(1, {
-        to: "0x1234567890123456789012345678901234567890" as \`0x\${string}\`,
-        data: "0xabcdef" as \`0x\${string}\`,
+        to: "0x1234567890123456789012345678901234567890" as `0x${string}`,
+        data: "0xabcdef" as `0x${string}`,
         value: 0n
       });
       expect(gas).toBeDefined();
@@ -35,7 +35,7 @@ describe("GasManager", () => {
 
     it("should estimate gas for EIP-1559 transaction", async () => {
       const gas = await gasManager.estimateGas(1, {
-        to: "0x1234567890123456789012345678901234567890" as \`0x\${string}\`,
+        to: "0x1234567890123456789012345678901234567890" as `0x${string}`,
         maxFeePerGas: 1000000000n,
         maxPriorityFeePerGas: 100000000n
       });
@@ -45,7 +45,7 @@ describe("GasManager", () => {
     it("should throw error for invalid address", async () => {
       await expect(
         gasManager.estimateGas(1, {
-          to: "invalid-address" as \`0x\${string}\`
+          to: "invalid-address" as `0x${string}`
         })
       ).rejects.toThrow("Invalid recipient address");
     });
@@ -53,7 +53,7 @@ describe("GasManager", () => {
     it("should throw error for unsupported chain", async () => {
       await expect(
         gasManager.estimateGas(999999, {
-          to: "0x1234567890123456789012345678901234567890" as \`0x\${string}\`
+          to: "0x1234567890123456789012345678901234567890" as `0x${string}`
         })
       ).rejects.toThrow("Invalid chain ID: 999999");
     });
@@ -74,9 +74,7 @@ describe("GasManager", () => {
     });
 
     it("should throw error for unsupported chain", async () => {
-      await expect(
-        gasManager.getGasPrice(999999)
-      ).rejects.toThrow("Invalid chain ID: 999999");
+      await expect(gasManager.getGasPrice(999999)).rejects.toThrow("Invalid chain ID: 999999");
     });
   });
 
