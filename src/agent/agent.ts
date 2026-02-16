@@ -7,6 +7,7 @@ import type {
 } from "../execution/types";
 import type { AgentConfig, AgentInfo, Task, TaskPayload, TaskResult } from "./types";
 import { TaskStatus, AgentStatus, AgentErrorCode, AgentManagerError } from "./types";
+import type { TransactionRequest } from "viem";
 
 export class Agent {
   private status: AgentStatus = AgentStatus.Idle;
@@ -14,6 +15,8 @@ export class Agent {
   private completedTasks: number = 0;
   private failedTasks: number = 0;
   private lastActive: number = Date.now();
+  private eventHandlerErrors: number = 0;
+  private readonly criticalEvents = new Set(["agent_created", "task_completed", "task_failed"]);
 
   constructor(
     private config: AgentConfig,
@@ -28,18 +31,22 @@ export class Agent {
   ) {
     this.emitEvent("agent_created", { config: this.config });
   }
+  /** Returns the unique ID of this agent */
 
   getId(): string {
     return this.config.id;
   }
+  /** Returns the name of this agent */
 
   getName(): string {
     return this.config.name;
   }
+  /** Returns the current status of this agent */
 
   getStatus(): AgentStatus {
     return this.status;
   }
+  /** Returns complete information about this agent */
 
   getInfo(): AgentInfo {
     return {
@@ -52,19 +59,23 @@ export class Agent {
       maxConcurrentTasks: this.config.maxConcurrentTasks || 3,
       completedTasks: this.completedTasks,
       failedTasks: this.failedTasks,
+      eventHandlerErrors: this.eventHandlerErrors,
       lastActive: this.lastActive,
       capabilities: this.config.capabilities
     };
   }
+  /** Returns true if agent is available to accept new tasks */
 
   isAvailable(): boolean {
     const maxTasks = this.config.maxConcurrentTasks || 3;
     return this.status === AgentStatus.Idle && this.currentTasks.size < maxTasks;
   }
+  /** Returns true if agent has the specified capability */
 
   hasCapability(capability: string): boolean {
     return this.config.capabilities.includes(capability);
   }
+  /** Returns true if agent can execute the given task */
 
   canExecuteTask(task: Task): boolean {
     if (!this.isAvailable()) {
@@ -79,6 +90,7 @@ export class Agent {
 
     return true;
   }
+  /** Executes a task and returns the result */
 
   async executeTask(task: Task): Promise<TaskResult> {
     if (!this.canExecuteTask(task)) {
@@ -173,7 +185,7 @@ export class Agent {
 
   private async executeTransaction(payload: {
     type: "transaction";
-    transaction: any;
+    transaction: TransactionRequest;
     chainId: number;
     keyId: string;
   }): Promise<ExecutionResult> {
@@ -213,7 +225,10 @@ export class Agent {
           data
         });
       } catch (err) {
-        console.error("Error in agent event handler:", err);
+        this.eventHandlerErrors++;
+        console.error("Error in agent event handler:", err);        if (this.criticalEvents.has(event)) {
+          throw err;
+        }
       }
     }
   }

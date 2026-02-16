@@ -19,6 +19,7 @@ import { AgentStatus, TaskStatus, TaskPriority, AgentErrorCode, AgentManagerErro
 
 const DEFAULT_MAX_CONCURRENT_AGENTS = 10;
 const MANAGER_START_TIME = Date.now();
+const SCHEDULER_INTERVAL_MS = 1000;
 
 export class AgentManager {
   private agents: Map<string, Agent> = new Map();
@@ -40,6 +41,7 @@ export class AgentManager {
       ) => void
     >
   > = new Map();
+  private eventListenerErrors: Map<string, number> = new Map();
 
   private isRunning: boolean = false;
   private schedulerInterval: NodeJS.Timeout | null = null;
@@ -57,6 +59,7 @@ export class AgentManager {
       this.startScheduler();
     }
   }
+  /** Adds a new agent to the manager */
 
   addAgent(agentConfig: AgentConfig): AgentInfo {
     if (this.agents.has(agentConfig.id)) {
@@ -89,6 +92,7 @@ export class AgentManager {
 
     return agent.getInfo();
   }
+  /** Removes an agent from the manager. Returns true if agent was removed, false if not found */
 
   removeAgent(agentId: string): boolean {
     const agent = this.agents.get(agentId);
@@ -107,19 +111,23 @@ export class AgentManager {
     return true;
   }
 
+  /** Gets an agent by ID. Returns undefined if not found */
   getAgent(agentId: string): AgentInfo | undefined {
     const agent = this.agents.get(agentId);
     return agent?.getInfo();
   }
+  /** Returns information about all registered agents */
 
   getAllAgents(): AgentInfo[] {
     return Array.from(this.agents.values()).map((agent) => agent.getInfo());
   }
 
+  /** Returns all available agents */
   getAvailableAgents(): AgentInfo[] {
     return this.getAllAgents().filter((info) => info.status === AgentStatus.Idle);
   }
 
+  /** Schedules a task for execution */
   scheduleTask(params: ScheduleTaskParams): string {
     const task = params.task;
 
@@ -146,6 +154,7 @@ export class AgentManager {
 
     return task.id;
   }
+  /** Cancels a task. Returns true if task was cancelled, false if not found or already completed */
 
   cancelTask(taskId: string): boolean {
     if (!this.taskQueue.getTask(taskId)) {
@@ -163,22 +172,27 @@ export class AgentManager {
 
     return true;
   }
+  /** Gets a task by ID. Returns undefined if not found */
 
   getTask(taskId: string): Task | undefined {
     return this.taskQueue.getTask(taskId);
   }
 
+  /** Returns all tasks in the queue */
   getAllTasks(): Task[] {
     return this.taskQueue.getAllTasks();
   }
 
+  /** Returns tasks by status */
   getTasksByStatus(status: TaskStatus): Task[] {
     return this.taskQueue.getTasksByStatus(status);
   }
 
+  /** Returns tasks by priority */
   getTasksByPriority(priority: TaskPriority): Task[] {
     return this.taskQueue.getTasksByPriority(priority);
   }
+  /** Returns manager statistics */
 
   getStats(): AgentManagerStats {
     const agents = this.getAllAgents();
@@ -238,6 +252,7 @@ export class AgentManager {
 
     return result;
   }
+  /** Starts the task scheduling loop */
 
   startScheduler(): void {
     if (this.isRunning) {
@@ -247,8 +262,9 @@ export class AgentManager {
     this.isRunning = true;
     this.schedulerInterval = setInterval(() => {
       this.scheduleNextTask();
-    }, 1000);
+    }, SCHEDULER_INTERVAL_MS);
   }
+  /** Stops the task scheduling loop */
 
   stopScheduler(): void {
     if (!this.isRunning) {
@@ -346,7 +362,11 @@ export class AgentManager {
         try {
           listener(event);
         } catch (err) {
+          this.eventListenerErrors.set("agent", (this.eventListenerErrors.get("agent") || 0) + 1);
           console.error("Error in agent event listener:", err);
+          if (["task_failed", "task_completed"].includes(event.event)) {
+            throw err;
+          }
         }
       });
     }
@@ -363,7 +383,11 @@ export class AgentManager {
         try {
           listener(event);
         } catch (err) {
+          this.eventListenerErrors.set("task", (this.eventListenerErrors.get("task") || 0) + 1);
           console.error("Error in task event listener:", err);
+          if (["failed", "completed"].includes(event.eventType)) {
+            throw err;
+          }
         }
       });
     }

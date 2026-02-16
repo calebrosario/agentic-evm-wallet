@@ -28,6 +28,7 @@ export interface AgentInfo {
   maxConcurrentTasks: number;
   completedTasks: number;
   failedTasks: number;
+  eventHandlerErrors: number;
   lastActive: number;
   capabilities: string[];
 }
