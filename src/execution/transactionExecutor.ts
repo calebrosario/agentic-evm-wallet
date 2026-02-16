@@ -1,5 +1,5 @@
 import type { Chain, TransactionRequest, WalletClient, PublicClient, Address } from "viem";
-import { http, createPublicClient, createWalletClient } from "viem";
+import { isAddress, http, createPublicClient, createWalletClient } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { mainnet, polygon } from "viem/chains";
 import { KeyManager, type KeyStoreEntry } from "../key/keyManager";
@@ -8,16 +8,37 @@ import type {
   ExecutionOptions,
   ExecutionResult,
   ExecutorOptions,
-  TransactionEvent
+  TransactionEvent,
+  RetryPolicy
 } from "./types";
 import { TransactionStatus, ErrorCode, TransactionExecutionError } from "./types";
 
+// Default execution constants
+const DEFAULT_MAX_RETRIES = 3;
+const DEFAULT_INITIAL_BACKOFF_MS = 1000;
+const DEFAULT_MAX_BACKOFF_MS = 10000;
+const DEFAULT_CONFIRMATIONS = 1;
+const DEFAULT_CONFIRMATION_TIMEOUT_MS = 60000;
+const DEFAULT_SLEEP_POLL_MS = 1000;
+const DUMMY_HASH = "0x0" as const;
+
+// Transaction validation limits
+const MAX_GAS_LIMIT = 30_000_000n; // 30M gas limit
+const MAX_VALUE = 1_000_000n * 10n ** 18n; // 1M ETH max value
+const MAX_DATA_LENGTH = 1_000_000; // 1MB max data size
+
+// Default retry policy
+const DEFAULT_RETRY_POLICY: RetryPolicy = {
+  maxRetries: DEFAULT_MAX_RETRIES,
+  initialBackoffMs: DEFAULT_INITIAL_BACKOFF_MS,
+  maxBackoffMs: DEFAULT_MAX_BACKOFF_MS,
+  backoffMultiplier: 2.0
+};
+
 export class TransactionExecutor {
   private readonly keyManager: KeyManager;
-  private readonly chains: Map<number, Chain> = new Map([
-    [1, mainnet as Chain],
-    [137, polygon as Chain]
-  ]);
+  private readonly chains: Map<number, Chain>;
+  private readonly rpcUrls: Record<number, string> | undefined;
   private readonly defaultOptions: ExecutionOptions;
   private readonly enableEvents: boolean;
   private readonly eventListeners: Map<string, Set<(event: TransactionEvent) => void>> = new Map();
@@ -26,8 +47,17 @@ export class TransactionExecutor {
     keyManager: KeyManager;
     defaultExecutionOptions?: ExecutionOptions;
     enableEvents?: boolean;
+    chains?: Map<number, Chain>;
+    rpcUrls?: Record<number, string>;
   }) {
     this.keyManager = options.keyManager;
+    this.chains =
+      options.chains ||
+      new Map([
+        [1, mainnet as Chain],
+        [137, polygon as Chain]
+      ]);
+    this.rpcUrls = options.rpcUrls;
     this.defaultOptions = options.defaultExecutionOptions || {};
     this.enableEvents = options.enableEvents !== false;
   }
@@ -37,11 +67,12 @@ export class TransactionExecutor {
     options: ExecutionOptions = {}
   ): Promise<ExecutionResult> {
     const mergedOptions = { ...this.defaultOptions, ...options };
-    const maxRetries = mergedOptions.maxRetries ?? 3;
-    const initialBackoffMs = mergedOptions.initialBackoffMs ?? 1000;
-    const maxBackoffMs = mergedOptions.maxBackoffMs ?? 10000;
-    const confirmations = mergedOptions.confirmations ?? 1;
-    const confirmationTimeoutMs = mergedOptions.confirmationTimeoutMs ?? 60000;
+    const maxRetries = mergedOptions.maxRetries ?? DEFAULT_MAX_RETRIES;
+    const initialBackoffMs = mergedOptions.initialBackoffMs ?? DEFAULT_INITIAL_BACKOFF_MS;
+    const maxBackoffMs = mergedOptions.maxBackoffMs ?? DEFAULT_MAX_BACKOFF_MS;
+    const confirmations = mergedOptions.confirmations ?? DEFAULT_CONFIRMATIONS;
+    const confirmationTimeoutMs =
+      mergedOptions.confirmationTimeoutMs ?? DEFAULT_CONFIRMATION_TIMEOUT_MS;
 
     let retryCount = 0;
     let lastError: Error | undefined;
@@ -125,8 +156,9 @@ export class TransactionExecutor {
     const publicClient = this.createPublicClient(chain);
     const walletClient = this.createWalletClient(chain, keyEntry.privateKey);
 
-    const { type: _, ...transactionWithoutType } = params.transaction as any;
-    const hash = await walletClient.sendTransaction(transactionWithoutType);
+    const { type: _type, ...transactionWithoutType } = params.transaction;
+
+    const hash = await this.broadcastTransaction(walletClient, transactionWithoutType);
 
     this.emitEvent({
       hash,
@@ -157,33 +189,37 @@ export class TransactionExecutor {
     };
   }
 
+  private async broadcastTransaction(walletClient: any, transaction: any): Promise<`0x${string}`> {
+    return await walletClient.sendTransaction(transaction);
+  }
+
   private async waitForConfirmation(
     publicClient: PublicClient,
     hash: `0x${string}`,
     confirmations: number,
     timeoutMs: number
   ) {
-    const startTime = Date.now();
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        reject(
+          new TransactionExecutionError("Transaction confirmation timeout", ErrorCode.Timeout)
+        );
+      }, timeoutMs);
+    });
 
-    while (Date.now() - startTime < timeoutMs) {
-      try {
-        const receipt = await publicClient.waitForTransactionReceipt({
-          hash,
-          confirmations
-        });
-        return receipt;
-      } catch (error) {
-        if (Date.now() - startTime >= timeoutMs) {
-          throw new TransactionExecutionError(
-            "Transaction confirmation timeout",
-            ErrorCode.Timeout
-          );
-        }
-        await this.sleep(1000);
+    const receiptPromise = publicClient.waitForTransactionReceipt({
+      hash,
+      confirmations
+    });
+
+    try {
+      return await Promise.race([receiptPromise, timeoutPromise]);
+    } catch (error) {
+      if ((error as Error).message.includes("timeout")) {
+        throw new TransactionExecutionError("Transaction confirmation timeout", ErrorCode.Timeout);
       }
+      throw error;
     }
-
-    throw new TransactionExecutionError("Transaction confirmation timeout", ErrorCode.Timeout);
   }
 
   private validateTransaction(params: ExecuteTransactionParams): void {
@@ -203,16 +239,24 @@ export class TransactionExecutor {
 
     if (!this.isValidAddress(params.transaction.to)) {
       throw new TransactionExecutionError(
-        "Invalid transaction: invalid 'to' address format",
+        "Invalid transaction: invalid 'to' address format (must be valid checksummed address)",
         ErrorCode.InvalidTransaction
       );
     }
 
-    if (params.transaction.gas !== undefined && params.transaction.gas <= 0n) {
-      throw new TransactionExecutionError(
-        "Invalid transaction: gas limit must be positive",
-        ErrorCode.InvalidTransaction
-      );
+    if (params.transaction.gas !== undefined) {
+      if (params.transaction.gas <= 0n) {
+        throw new TransactionExecutionError(
+          "Invalid transaction: gas limit must be positive",
+          ErrorCode.InvalidTransaction
+        );
+      }
+      if (params.transaction.gas > MAX_GAS_LIMIT) {
+        throw new TransactionExecutionError(
+          `Invalid transaction: gas limit exceeds maximum of ${MAX_GAS_LIMIT}`,
+          ErrorCode.InvalidTransaction
+        );
+      }
     }
 
     if (params.transaction.gasPrice !== undefined && params.transaction.gasPrice < 0n) {
@@ -221,10 +265,35 @@ export class TransactionExecutor {
         ErrorCode.InvalidTransaction
       );
     }
+
+    if (params.transaction.value !== undefined && params.transaction.value > MAX_VALUE) {
+      throw new TransactionExecutionError(
+        `Invalid transaction: value exceeds maximum of ${MAX_VALUE}`,
+        ErrorCode.InvalidTransaction
+      );
+    }
+
+    if (params.transaction.data !== undefined) {
+      const dataLength = (params.transaction.data as string).length / 2 - 1;
+      if (dataLength > MAX_DATA_LENGTH) {
+        throw new TransactionExecutionError(
+          `Invalid transaction: data exceeds maximum length of ${MAX_DATA_LENGTH} bytes`,
+          ErrorCode.InvalidTransaction
+        );
+      }
+    }
   }
 
   private async getKey(keyId: string): Promise<KeyStoreEntry> {
     const [chainId, address] = keyId.split(":");
+    if (!chainId || !address) {
+      throw new TransactionExecutionError(
+        "Invalid key ID format: expected 'chainId:address'",
+        ErrorCode.InvalidKey,
+        { keyId }
+      );
+    }
+
     const key = this.keyManager.getKey(address as `0x${string}`, parseInt(chainId));
     if (!key) {
       throw new TransactionExecutionError("Key not found", ErrorCode.InvalidKey, { keyId });
@@ -236,7 +305,7 @@ export class TransactionExecutor {
     const chain = this.chains.get(chainId);
     if (!chain) {
       throw new TransactionExecutionError(
-        "Invalid chain ID: " + chainId + ". Supported chains: 1 (Ethereum), 137 (Polygon)",
+        `Invalid chain ID: ${chainId}. Configure this chain in the constructor.`,
         ErrorCode.InvalidKey,
         { chainId }
       );
@@ -245,31 +314,55 @@ export class TransactionExecutor {
   }
 
   private createPublicClient(chain: Chain): PublicClient {
+    const rpcUrl = this.rpcUrls?.[chain.id];
     return createPublicClient({
       chain,
-      transport: http()
+      transport: rpcUrl ? http(rpcUrl) : http()
     });
   }
 
   private createWalletClient(chain: Chain, privateKey: `0x${string}`): WalletClient {
+    const rpcUrl = this.rpcUrls?.[chain.id];
     return createWalletClient({
       chain,
       account: privateKeyToAccount(privateKey),
-      transport: http()
+      transport: rpcUrl ? http(rpcUrl) : http()
     });
   }
 
   private isValidAddress(address: Address): boolean {
-    return /^0x[a-fA-F0-9]{40}$/.test(address);
+    try {
+      return (isAddress as (address: string) => boolean)(address);
+    } catch {
+      return false;
+    }
   }
 
   private shouldRetry(error: Error): boolean {
+    if (error instanceof TransactionExecutionError) {
+      const noRetryCodes = [
+        ErrorCode.InvalidKey,
+        ErrorCode.InvalidTransaction,
+        ErrorCode.ValidationFailed
+      ];
+      if (noRetryCodes.includes(error.code)) {
+        return false;
+      }
+
+      const retryCodes = [ErrorCode.BroadcastingFailed, ErrorCode.ConfirmationFailed];
+      if (retryCodes.includes(error.code)) {
+        return true;
+      }
+    }
+
     const errorMessage = error.message.toLowerCase();
-    return (
-      errorMessage.includes("network") ||
-      errorMessage.includes("timeout") ||
-      errorMessage.includes("connection")
-    );
+    const transientIndicators = ["network", "timeout", "connection"];
+    const noRetryIndicators = ["invalid signature", "nonce too low", "insufficient funds"];
+
+    const isTransient = transientIndicators.some((indicator) => errorMessage.includes(indicator));
+    const isNonRetriable = noRetryIndicators.some((indicator) => errorMessage.includes(indicator));
+
+    return isTransient && !isNonRetriable;
   }
 
   private calculateBackoff(

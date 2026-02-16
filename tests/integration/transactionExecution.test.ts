@@ -45,7 +45,10 @@ describe("Transaction Execution - Integration Tests", () => {
         expect(result.hash).toBeDefined();
         expect(result.retries).toBeGreaterThanOrEqual(0);
       } catch (error) {
-        expect(error).toBeDefined();
+        expect(error).toBeInstanceOf(Error);
+        if (error instanceof Error) {
+          expect(error.message).toBeTruthy();
+        }
       }
     }, 10000);
 
@@ -75,12 +78,11 @@ describe("Transaction Execution - Integration Tests", () => {
 
         expect(result).toBeDefined();
       } catch (error) {
-        expect(error).toBeDefined();
+        expect(error).toBeInstanceOf(Error);
+        expect(error).toHaveProperty("message");
       }
     }, 10000);
-  });
 
-  describe("Multi-Chain Support", () => {
     test("should execute on Ethereum mainnet", async () => {
       const keyEntry = keyManager.generateKey({ chainId: 1 });
       const ethKeyId = `1:${keyEntry.address}`;
@@ -100,7 +102,8 @@ describe("Transaction Execution - Integration Tests", () => {
 
         expect(result).toBeDefined();
       } catch (error) {
-        expect(error).toBeDefined();
+        expect(error).toBeInstanceOf(Error);
+        expect(error).toHaveProperty("message");
       }
     }, 10000);
 
@@ -123,7 +126,8 @@ describe("Transaction Execution - Integration Tests", () => {
 
         expect(result).toBeDefined();
       } catch (error) {
-        expect(error).toBeDefined();
+        expect(error).toBeInstanceOf(Error);
+        expect(error).toHaveProperty("message");
       }
     }, 10000);
   });
@@ -195,7 +199,8 @@ describe("Transaction Execution - Integration Tests", () => {
           keyId: existingKeyId
         });
       } catch (error) {
-        expect(error).toBeDefined();
+        expect(error).toBeInstanceOf(Error);
+        expect(error).toHaveProperty("message");
       }
     }, 10000);
   });
@@ -283,7 +288,8 @@ describe("Transaction Execution - Integration Tests", () => {
           keyId: testKeyId
         });
       } catch (error) {
-        expect(error).toBeDefined();
+        expect(error).toBeInstanceOf(Error);
+        expect(error).toHaveProperty("message");
       }
     }, 10000);
 
@@ -304,7 +310,8 @@ describe("Transaction Execution - Integration Tests", () => {
           keyId: testKeyId
         });
       } catch (error) {
-        expect(error).toBeDefined();
+        expect(error).toBeInstanceOf(Error);
+        expect(error).toHaveProperty("message");
       }
     }, 10000);
 
@@ -325,7 +332,8 @@ describe("Transaction Execution - Integration Tests", () => {
           keyId: testKeyId
         });
       } catch (error) {
-        expect(error).toBeDefined();
+        expect(error).toBeInstanceOf(Error);
+        expect(error).toHaveProperty("message");
       }
     }, 10000);
   });
