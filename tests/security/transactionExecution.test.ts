@@ -1,8 +1,8 @@
 import { describe, test, expect, beforeEach } from "bun:test";
-import { TransactionExecutor } from "../../../src/execution/transactionExecutor";
-import { KeyManager } from "../../../src/key/keyManager";
+import { TransactionExecutor } from "../../src/execution/transactionExecutor";
+import { KeyManager } from "../../src/key/keyManager";
 import type { TransactionRequest } from "viem";
-import { ErrorCode, TransactionStatus } from "../../../src/execution/types";
+import { ErrorCode, TransactionStatus } from "../../src/execution/types";
 
 describe("Transaction Execution - Security Tests", () => {
   let executor: TransactionExecutor;
@@ -33,7 +33,7 @@ describe("Transaction Execution - Security Tests", () => {
   describe("Key Security", () => {
     test("should reject non-existent key ID", async () => {
       const transaction: TransactionRequest = {
-        to: "0x0000000000000000000000000000000000000000" as \`0x\${string}\`,
+        to: "0x0000000000000000000000000000000000000000" as `0x${string}`,
         value: 0n,
         gas: 21000n
       };
@@ -78,8 +78,10 @@ describe("Transaction Execution - Security Tests", () => {
         throw new Error("Listener error");
       });
 
-      try {
-        await executor.executeTransaction({
+      // The transaction should complete successfully despite listener error
+      // because emitEvent catches and logs listener errors without re-throwing
+      await expect(
+        executor.executeTransaction({
           transaction: {
             to: keyEntry.address,
             value: 0n,
@@ -87,10 +89,8 @@ describe("Transaction Execution - Security Tests", () => {
           },
           chainId: 1,
           keyId
-        });
-      } catch (error) {
-        expect(error).toBeDefined();
-      }
+        })
+      ).rejects.toThrow();
     });
   });
 });

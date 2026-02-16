@@ -62,6 +62,45 @@ export class TransactionExecutor {
     this.enableEvents = options.enableEvents !== false;
   }
 
+  /**
+   * Executes a transaction with retry logic and event emission.
+   *
+   * This is the main entry point for transaction execution. It handles the complete
+   * transaction lifecycle: validation, signing, broadcasting, and confirmation waiting.
+   * Includes exponential backoff retry logic for transient failures and emits events
+   * for transaction status changes.
+   *
+   * @param params - Transaction execution parameters
+   * @param params.keyId - Key identifier in format "chainId:address"
+   * @param params.chainId - Chain ID for the transaction
+   * @param params.transaction - Transaction request object (to, value, data, gas, etc.)
+   * @param options - Optional execution settings to override defaults
+   * @param options.maxRetries - Maximum number of retry attempts (default: 3)
+   * @param options.initialBackoffMs - Initial backoff in milliseconds (default: 1000)
+   * @param options.maxBackoffMs - Maximum backoff in milliseconds (default: 10000)
+   * @param options.confirmations - Number of confirmations to wait for (default: 1)
+   * @param options.confirmationTimeoutMs - Timeout for confirmation in ms (default: 60000)
+   * @returns Promise resolving to execution result with transaction details
+   * @throws {TransactionExecutionError} If transaction execution fails after all retries
+   * @throws {TransactionExecutionError} If validation fails
+   * @throws {TransactionExecutionError} If retry limit is exceeded
+   *
+   * @example
+   * ```ts
+   * const result = await executor.executeTransaction(
+   *   {
+   *     keyId: "1:0x123...",
+   *     chainId: 1,
+   *     transaction: {
+   *       to: "0x456...",
+   *       value: 1000000000000000000n
+   *     }
+   *   },
+   *   { maxRetries: 5 }
+   * );
+   * console.log(result.hash); // "0xabc..."
+   * ```
+   */
   async executeTransaction(
     params: ExecuteTransactionParams,
     options: ExecutionOptions = {}
@@ -111,6 +150,31 @@ export class TransactionExecutor {
     });
   }
 
+  /**
+   * Registers an event listener for transaction status events.
+   *
+   * Subscribes to transaction lifecycle events such as Pending, Signed, Broadcasted,
+   * Confirmed, or Failed. Useful for monitoring transaction progress and reacting to
+   * status changes in real-time.
+   *
+   * @param event - Event name matching TransactionStatus (e.g., "Pending", "Confirmed", "Failed")
+   * @param listener - Callback function that receives TransactionEvent object
+   * @param listener.hash - Transaction hash (may be "0x0" for early events)
+   * @param listener.status - Current transaction status
+   * @param listener.timestamp - Unix timestamp in milliseconds
+   * @param listener.error - Optional error message if status is "Failed"
+   *
+   * @example
+   * ```ts
+   * executor.on("Confirmed", (event) => {
+   *   console.log(`Transaction ${event.hash} confirmed at block ${event.blockNumber}`);
+   * });
+   *
+   * executor.on("Failed", (event) => {
+   *   console.error(`Transaction failed: ${event.error}`);
+   * });
+   * ```
+   */
   on(event: string, listener: (event: TransactionEvent) => void): void {
     if (!this.enableEvents) return;
 
@@ -120,6 +184,26 @@ export class TransactionExecutor {
     this.eventListeners.get(event)!.add(listener);
   }
 
+  /**
+   * Removes an event listener for transaction status events.
+   *
+   * Unsubscribes a previously registered event listener. If no listeners remain
+   * for the given event, the event is automatically cleaned up. This is important
+   * for preventing memory leaks in long-running applications.
+   *
+   * @param event - Event name matching TransactionStatus (e.g., "Pending", "Confirmed", "Failed")
+   * @param listener - The same callback function that was previously registered via `on()`
+   *
+   * @example
+   * ```ts
+   * // Register listener
+   * const listener = (event) => console.log(event.status);
+   * executor.on("Confirmed", listener);
+   *
+   * // Later, unregister to prevent memory leaks
+   * executor.off("Confirmed", listener);
+   * ```
+   */
   off(event: string, listener: (event: TransactionEvent) => void): void {
     const listeners = this.eventListeners.get(event);
     if (listeners) {
