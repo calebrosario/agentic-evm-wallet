@@ -16,7 +16,12 @@ export class Agent {
   private failedTasks: number = 0;
   private lastActive: number = Date.now();
   private eventHandlerErrors: number = 0;
-  private readonly criticalEvents = new Set(["agent_created", "task_completed", "task_failed"]);
+  private readonly criticalEvents = new Set([
+    "agent_created",
+    "task_completed",
+    "task_failed",
+    "task_timeout"
+  ]);
 
   constructor(
     private config: AgentConfig,
@@ -75,6 +80,13 @@ export class Agent {
   hasCapability(capability: string): boolean {
     return this.config.capabilities.includes(capability);
   }
+  /** Sets event handler for testing purposes */
+
+  setEventHandler(
+    handler: (event: { agentId: string; event: string; timestamp: number; data?: unknown }) => void
+  ): void {
+    this.eventHandler = handler;
+  }
   /** Returns true if agent can execute the given task */
 
   canExecuteTask(task: Task): boolean {
@@ -125,9 +137,31 @@ export class Agent {
     const startTime = Date.now();
     let result: unknown;
     let error: string | undefined;
+    let status: TaskStatus = TaskStatus.Completed;
 
     try {
-      result = await this.executeTaskPayload(task.payload);
+      const executionPromise = this.executeTaskPayload(task.payload);
+
+      if (task.timeoutMs && task.timeoutMs > 0) {
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => {
+            reject(
+              new AgentManagerError(
+                `Task timed out after ${task.timeoutMs}ms`,
+                AgentErrorCode.TaskTimeout,
+                {
+                  agentId: this.config.id,
+                  taskId: task.id
+                }
+              )
+            );
+          }, task.timeoutMs);
+        });
+
+        result = await Promise.race([executionPromise, timeoutPromise]);
+      } else {
+        result = await executionPromise;
+      }
 
       this.completedTasks++;
       this.lastActive = Date.now();
@@ -137,36 +171,34 @@ export class Agent {
       }
 
       this.emitEvent("task_completed", { taskId: task.id, result });
-
-      return {
-        taskId: task.id,
-        agentId: this.config.id,
-        status: TaskStatus.Completed,
-        result,
-        retries: 0,
-        startedAt: startTime,
-        completedAt: Date.now()
-      };
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
-      this.failedTasks++;
-      this.status = AgentStatus.Error;
+
+      if (err instanceof AgentManagerError && err.code === AgentErrorCode.TaskTimeout) {
+        status = TaskStatus.Timeout;
+        this.emitEvent("task_timeout", { taskId: task.id, error });
+      } else {
+        status = TaskStatus.Failed;
+        this.failedTasks++;
+        this.status = AgentStatus.Error;
+        this.emitEvent("task_failed", { taskId: task.id, error });
+      }
+
       this.lastActive = Date.now();
-
-      this.emitEvent("task_failed", { taskId: task.id, error });
-
-      return {
-        taskId: task.id,
-        agentId: this.config.id,
-        status: TaskStatus.Failed,
-        error,
-        retries: 0,
-        startedAt: startTime,
-        completedAt: Date.now()
-      };
     } finally {
       this.currentTasks.delete(task.id);
     }
+
+    return {
+      taskId: task.id,
+      agentId: this.config.id,
+      status,
+      result: error ? undefined : result,
+      error: error ? error : undefined,
+      retries: 0,
+      startedAt: startTime,
+      completedAt: Date.now()
+    };
   }
 
   private async executeTaskPayload(payload: TaskPayload): Promise<unknown> {
@@ -205,6 +237,12 @@ export class Agent {
     action: string;
     params: Record<string, unknown>;
   }): Promise<unknown> {
+    if (payload.action === "long-operation") {
+      const duration = (payload.params.duration as number) || 10000;
+      await new Promise((resolve) => setTimeout(resolve, duration));
+      return { success: true };
+    }
+
     throw new AgentManagerError(
       "Custom tasks not yet implemented",
       AgentErrorCode.TaskExecutionFailed,
@@ -226,7 +264,8 @@ export class Agent {
         });
       } catch (err) {
         this.eventHandlerErrors++;
-        console.error("Error in agent event handler:", err);        if (this.criticalEvents.has(event)) {
+        console.error("Error in agent event handler:", err);
+        if (this.criticalEvents.has(event)) {
           throw err;
         }
       }
