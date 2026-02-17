@@ -163,11 +163,11 @@ describe("Agent", () => {
       };
 
       let eventReceived = false;
-      agent["eventHandler"] = (event: { event: string; data?: unknown }) => {
+      agent.setEventHandler((event: { event: string; data?: unknown }) => {
         if (event.event === "task_timeout") {
           eventReceived = true;
         }
-      };
+      });
 
       const result = await agent.executeTask(task);
 
@@ -195,6 +195,29 @@ describe("Agent", () => {
       const result = await agent.executeTask(task);
 
       expect(result.taskId).toBe("task-no-timeout");
+      expect(result.agentId).toBe("agent-1");
+      expect(result.status).toBe(TaskStatus.Failed);
+      expect(result.error).toContain("not yet implemented");
+    });
+
+    test("should not timeout when timeoutMs is 0", async () => {
+      const task: Task = {
+        id: "task-zero-timeout",
+        name: "Zero Timeout Task",
+        priority: TaskPriority.Normal,
+        payload: {
+          type: "custom",
+          action: "test",
+          params: {}
+        },
+        dependencies: [],
+        timeoutMs: 0,
+        createdAt: Date.now()
+      };
+
+      const result = await agent.executeTask(task);
+
+      expect(result.taskId).toBe("task-zero-timeout");
       expect(result.agentId).toBe("agent-1");
       expect(result.status).toBe(TaskStatus.Failed);
       expect(result.error).toContain("not yet implemented");

@@ -16,7 +16,12 @@ export class Agent {
   private failedTasks: number = 0;
   private lastActive: number = Date.now();
   private eventHandlerErrors: number = 0;
-  private readonly criticalEvents = new Set(["agent_created", "task_completed", "task_failed"]);
+  private readonly criticalEvents = new Set([
+    "agent_created",
+    "task_completed",
+    "task_failed",
+    "task_timeout"
+  ]);
 
   constructor(
     private config: AgentConfig,
@@ -74,6 +79,13 @@ export class Agent {
 
   hasCapability(capability: string): boolean {
     return this.config.capabilities.includes(capability);
+  }
+  /** Sets event handler for testing purposes */
+
+  setEventHandler(
+    handler: (event: { agentId: string; event: string; timestamp: number; data?: unknown }) => void
+  ): void {
+    this.eventHandler = handler;
   }
   /** Returns true if agent can execute the given task */
 

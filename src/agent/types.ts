@@ -40,6 +40,7 @@ export interface AgentEvent {
     | "task_assigned"
     | "task_completed"
     | "task_failed"
+    | "task_timeout"
     | "agent_created"
     | "agent_removed";
   timestamp: number;
