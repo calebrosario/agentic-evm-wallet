@@ -5,7 +5,7 @@ import type {
   ExecutionOptions,
   ExecutionResult
 } from "../execution/types";
-import type { AgentConfig, AgentInfo, Task, TaskPayload, TaskResult } from "./types";
+import type { AgentConfig, AgentInfo, Task, TaskPayload, TaskResult, RetryPolicy } from "./types";
 import { TaskStatus, AgentStatus, AgentErrorCode, AgentManagerError } from "./types";
 import type { TransactionRequest } from "viem";
 
@@ -20,7 +20,8 @@ export class Agent {
     "agent_created",
     "task_completed",
     "task_failed",
-    "task_timeout"
+    "task_timeout",
+    "task_retry"
   ]);
 
   constructor(
@@ -135,58 +136,88 @@ export class Agent {
     this.emitEvent("task_assigned", { taskId: task.id, task: task.name });
 
     const startTime = Date.now();
+    const maxRetries = task.retryPolicy?.maxRetries ?? 0;
+    const baseDelayMs = task.retryPolicy?.baseDelayMs ?? 1000;
+    const maxDelayMs = task.retryPolicy?.maxDelayMs ?? 30000;
+    const retryableErrors = task.retryPolicy?.retryableErrors ?? [AgentErrorCode.TaskTimeout];
+
+    let totalAttempts = 0;
     let result: unknown;
     let error: string | undefined;
     let status: TaskStatus = TaskStatus.Completed;
 
-    try {
-      const executionPromise = this.executeTaskPayload(task.payload);
+    while (totalAttempts <= maxRetries) {
+      try {
+        const executionPromise = this.executeTaskPayload(task.payload);
 
-      if (task.timeoutMs && task.timeoutMs > 0) {
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => {
-            reject(
-              new AgentManagerError(
-                `Task timed out after ${task.timeoutMs}ms`,
-                AgentErrorCode.TaskTimeout,
-                {
-                  agentId: this.config.id,
-                  taskId: task.id
-                }
-              )
-            );
-          }, task.timeoutMs);
-        });
+        if (task.timeoutMs && task.timeoutMs > 0) {
+          const timeoutPromise = new Promise<never>((_, reject) => {
+            setTimeout(() => {
+              reject(
+                new AgentManagerError(
+                  `Task timed out after ${task.timeoutMs}ms`,
+                  AgentErrorCode.TaskTimeout,
+                  {
+                    agentId: this.config.id,
+                    taskId: task.id
+                  }
+                )
+              );
+            }, task.timeoutMs);
+          });
 
-        result = await Promise.race([executionPromise, timeoutPromise]);
-      } else {
-        result = await executionPromise;
+          result = await Promise.race([executionPromise, timeoutPromise]);
+        } else {
+          result = await executionPromise;
+        }
+
+        this.lastActive = Date.now();
+
+        if (this.currentTasks.size === 0) {
+          this.status = AgentStatus.Idle;
+        }
+
+        this.emitEvent("task_completed", { taskId: task.id, result });
+
+        break;
+      } catch (err) {
+        error = err instanceof Error ? err.message : String(err);
+        const errorCode = err instanceof AgentManagerError ? err.code : undefined;
+
+        if (errorCode === AgentErrorCode.TaskTimeout) {
+          status = TaskStatus.Timeout;
+          this.emitEvent("task_timeout", { taskId: task.id, error });
+        } else {
+          status = TaskStatus.Failed;
+          this.failedTasks++;
+          this.status = AgentStatus.Error;
+          this.emitEvent("task_failed", { taskId: task.id, error });
+        }
+
+        this.lastActive = Date.now();
+
+        if (totalAttempts < maxRetries && errorCode && retryableErrors.includes(errorCode)) {
+          totalAttempts++;
+
+          const delay = this.calculateRetryDelay(totalAttempts, baseDelayMs, maxDelayMs);
+          this.emitEvent("task_retry", {
+            taskId: task.id,
+            attempt: totalAttempts,
+            delay,
+            error
+          });
+
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        } else {
+          break;
+        }
       }
+    }
 
+    this.currentTasks.delete(task.id);
+
+    if (status === TaskStatus.Completed) {
       this.completedTasks++;
-      this.lastActive = Date.now();
-
-      if (this.currentTasks.size === 0) {
-        this.status = AgentStatus.Idle;
-      }
-
-      this.emitEvent("task_completed", { taskId: task.id, result });
-    } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
-
-      if (err instanceof AgentManagerError && err.code === AgentErrorCode.TaskTimeout) {
-        status = TaskStatus.Timeout;
-        this.emitEvent("task_timeout", { taskId: task.id, error });
-      } else {
-        status = TaskStatus.Failed;
-        this.failedTasks++;
-        this.status = AgentStatus.Error;
-        this.emitEvent("task_failed", { taskId: task.id, error });
-      }
-
-      this.lastActive = Date.now();
-    } finally {
-      this.currentTasks.delete(task.id);
     }
 
     return {
@@ -195,7 +226,7 @@ export class Agent {
       status,
       result: error ? undefined : result,
       error: error ? error : undefined,
-      retries: 0,
+      retries: totalAttempts,
       startedAt: startTime,
       completedAt: Date.now()
     };
@@ -251,6 +282,11 @@ export class Agent {
         action: payload.action
       }
     );
+  }
+
+  private calculateRetryDelay(attempt: number, baseDelayMs: number, maxDelayMs: number): number {
+    const delay = baseDelayMs * Math.pow(2, attempt - 1);
+    return Math.min(delay, maxDelayMs);
   }
 
   private emitEvent(event: string, data?: unknown): void {
