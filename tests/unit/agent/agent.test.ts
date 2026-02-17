@@ -5,7 +5,7 @@ import { TransactionExecutor } from "../../../src/execution/transactionExecutor"
 import { KeyManager } from "../../../src/key/keyManager";
 import type { AgentConfig, Task } from "../../../src/agent/types";
 import type { KeyStoreEntry } from "../../../src/key/keyManager";
-import { AgentStatus, TaskPriority, TaskStatus } from "../../../src/agent/types";
+import { AgentStatus, TaskPriority, TaskStatus, AgentErrorCode } from "../../../src/agent/types";
 
 describe("Agent", () => {
   let agent: Agent;
@@ -221,6 +221,178 @@ describe("Agent", () => {
       expect(result.agentId).toBe("agent-1");
       expect(result.status).toBe(TaskStatus.Failed);
       expect(result.error).toContain("not yet implemented");
+    });
+
+    test("should retry task with exponential backoff on timeout", async () => {
+      const task: Task = {
+        id: "task-retry-timeout",
+        name: "Retry Timeout Task",
+        priority: TaskPriority.Normal,
+        payload: {
+          type: "custom",
+          action: "long-operation",
+          params: { duration: 10000 }
+        },
+        dependencies: [],
+        timeoutMs: 50,
+        retryPolicy: {
+          maxRetries: 2,
+          baseDelayMs: 100,
+          maxDelayMs: 500
+        },
+        createdAt: Date.now()
+      };
+
+      const retryEvents: Array<{ attempt: number; delay: number; error: string }> = [];
+      agent.setEventHandler((event) => {
+        if (event.event === "task_retry") {
+          const data = event.data as { attempt: number; delay: number; error: string };
+          retryEvents.push(data);
+        }
+      });
+
+      const result = await agent.executeTask(task);
+
+      expect(result.status).toBe(TaskStatus.Timeout);
+      expect(result.retries).toBe(2);
+      expect(retryEvents).toHaveLength(2);
+      expect(retryEvents[0].attempt).toBe(1);
+      expect(retryEvents[0].delay).toBe(100);
+      expect(retryEvents[1].attempt).toBe(2);
+      expect(retryEvents[1].delay).toBe(200);
+    });
+
+    test("should stop retrying after maxRetries", async () => {
+      const task: Task = {
+        id: "task-max-retries",
+        name: "Max Retries Task",
+        priority: TaskPriority.Normal,
+        payload: {
+          type: "custom",
+          action: "long-operation",
+          params: { duration: 10000 }
+        },
+        dependencies: [],
+        timeoutMs: 50,
+        retryPolicy: {
+          maxRetries: 1,
+          baseDelayMs: 100
+        },
+        createdAt: Date.now()
+      };
+
+      const result = await agent.executeTask(task);
+
+      expect(result.status).toBe(TaskStatus.Timeout);
+      expect(result.retries).toBe(1);
+      expect(result.error).toContain("timed out");
+    });
+
+    test("should not retry non-retryable errors", async () => {
+      const task: Task = {
+        id: "task-non-retryable",
+        name: "Non-Retryable Task",
+        priority: TaskPriority.Normal,
+        payload: {
+          type: "custom",
+          action: "test",
+          params: {}
+        },
+        dependencies: [],
+        retryPolicy: {
+          maxRetries: 3,
+          retryableErrors: [AgentErrorCode.TaskTimeout]
+        },
+        createdAt: Date.now()
+      };
+
+      const result = await agent.executeTask(task);
+
+      expect(result.status).toBe(TaskStatus.Failed);
+      expect(result.retries).toBe(0);
+      expect(result.error).toContain("not yet implemented");
+    });
+
+    test("should respect custom maxDelayMs in retry policy", async () => {
+      const task: Task = {
+        id: "task-custom-delay",
+        name: "Custom Delay Task",
+        priority: TaskPriority.Normal,
+        payload: {
+          type: "custom",
+          action: "long-operation",
+          params: { duration: 10000 }
+        },
+        dependencies: [],
+        timeoutMs: 30,
+        retryPolicy: {
+          maxRetries: 2,
+          baseDelayMs: 1000,
+          maxDelayMs: 1500
+        },
+        createdAt: Date.now()
+      };
+
+      const retryEvents: Array<{ delay: number }> = [];
+      agent.setEventHandler((event) => {
+        if (event.event === "task_retry") {
+          const data = event.data as { delay: number };
+          retryEvents.push(data);
+        }
+      });
+
+      await agent.executeTask(task);
+
+      expect(retryEvents.length).toBeGreaterThan(0);
+      retryEvents.forEach((event) => {
+        expect(event.delay).toBeLessThanOrEqual(1500);
+      });
+    });
+
+    test("should succeed without retry when task completes", async () => {
+      const task: Task = {
+        id: "task-no-retry-needed",
+        name: "No Retry Task",
+        priority: TaskPriority.Normal,
+        payload: {
+          type: "custom",
+          action: "long-operation",
+          params: { duration: 10 }
+        },
+        dependencies: [],
+        timeoutMs: 100,
+        retryPolicy: {
+          maxRetries: 3
+        },
+        createdAt: Date.now()
+      };
+
+      const result = await agent.executeTask(task);
+
+      expect(result.status).toBe(TaskStatus.Completed);
+      expect(result.retries).toBe(0);
+      expect(result.result).toEqual({ success: true });
+    });
+
+    test("should use default retry policy when not specified", async () => {
+      const task: Task = {
+        id: "task-default-policy",
+        name: "Default Policy Task",
+        priority: TaskPriority.Normal,
+        payload: {
+          type: "custom",
+          action: "long-operation",
+          params: { duration: 10000 }
+        },
+        dependencies: [],
+        timeoutMs: 50,
+        createdAt: Date.now()
+      };
+
+      const result = await agent.executeTask(task);
+
+      expect(result.retries).toBe(0);
+      expect(result.status).toBe(TaskStatus.Timeout);
     });
   });
 });

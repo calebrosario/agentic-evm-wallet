@@ -41,6 +41,7 @@ export interface AgentEvent {
     | "task_completed"
     | "task_failed"
     | "task_timeout"
+    | "task_retry"
     | "agent_created"
     | "agent_removed";
   timestamp: number;
@@ -80,6 +81,13 @@ export interface CustomTask {
 
 export type TaskPayload = TransactionTask | CustomTask;
 
+export interface RetryPolicy {
+  maxRetries?: number;
+  baseDelayMs?: number;
+  maxDelayMs?: number;
+  retryableErrors?: AgentErrorCode[];
+}
+
 export interface Task {
   id: string;
   name: string;
@@ -88,6 +96,7 @@ export interface Task {
   dependencies: string[];
   timeoutMs?: number;
   retries?: number;
+  retryPolicy?: RetryPolicy;
   metadata?: Record<string, unknown>;
   createdAt: number;
   scheduledAt?: number;
