@@ -141,12 +141,12 @@ export class Agent {
     const maxDelayMs = task.retryPolicy?.maxDelayMs ?? 30000;
     const retryableErrors = task.retryPolicy?.retryableErrors ?? [AgentErrorCode.TaskTimeout];
 
-    let attempt = 0;
+    let totalAttempts = 0;
     let result: unknown;
     let error: string | undefined;
     let status: TaskStatus = TaskStatus.Completed;
 
-    while (attempt <= maxRetries) {
+    while (totalAttempts <= maxRetries) {
       try {
         const executionPromise = this.executeTaskPayload(task.payload);
 
@@ -171,7 +171,6 @@ export class Agent {
           result = await executionPromise;
         }
 
-        this.completedTasks++;
         this.lastActive = Date.now();
 
         if (this.currentTasks.size === 0) {
@@ -197,21 +196,18 @@ export class Agent {
 
         this.lastActive = Date.now();
 
-        if (attempt < maxRetries && errorCode && retryableErrors.includes(errorCode)) {
-          attempt++;
+        if (totalAttempts < maxRetries && errorCode && retryableErrors.includes(errorCode)) {
+          totalAttempts++;
 
-          const delay = this.calculateRetryDelay(attempt, baseDelayMs, maxDelayMs);
+          const delay = this.calculateRetryDelay(totalAttempts, baseDelayMs, maxDelayMs);
           this.emitEvent("task_retry", {
             taskId: task.id,
-            attempt,
+            attempt: totalAttempts,
             delay,
             error
           });
 
           await new Promise((resolve) => setTimeout(resolve, delay));
-
-          status = TaskStatus.Completed;
-          error = undefined;
         } else {
           break;
         }
@@ -220,13 +216,17 @@ export class Agent {
 
     this.currentTasks.delete(task.id);
 
+    if (status === TaskStatus.Completed) {
+      this.completedTasks++;
+    }
+
     return {
       taskId: task.id,
       agentId: this.config.id,
       status,
       result: error ? undefined : result,
       error: error ? error : undefined,
-      retries: attempt,
+      retries: totalAttempts,
       startedAt: startTime,
       completedAt: Date.now()
     };

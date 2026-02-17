@@ -81,10 +81,57 @@ export interface CustomTask {
 
 export type TaskPayload = TransactionTask | CustomTask;
 
+/**
+ * Configuration for task retry behavior.
+ *
+ * @example
+ * ```typescript
+ * const task: Task = {
+ *   ...
+ *   retryPolicy: {
+ *     maxRetries: 3,        // Retry up to 3 times after initial failure
+ *     baseDelayMs: 1000,   // Start with 1 second delay
+ *     maxDelayMs: 30000,   // Cap delay at 30 seconds
+ *     retryableErrors: [     // Only retry these specific errors
+ *       AgentErrorCode.TaskTimeout
+ *     ]
+ *   }
+ * };
+ * ```
+ */
 export interface RetryPolicy {
+  /**
+   * Maximum number of retry attempts after initial failure.
+   * Default: 0 (no retries)
+   *
+   * If task fails and retries are not exhausted, task will be retried.
+   * Exponential backoff is applied: delay = baseDelayMs * 2^(attempt - 1)
+   */
   maxRetries?: number;
+
+  /**
+   * Base delay in milliseconds for exponential backoff.
+   * Default: 1000ms (1 second)
+   *
+   * Delay formula: delay = baseDelayMs * Math.pow(2, attempt - 1)
+   * Delay is capped at maxDelayMs to prevent excessive waits.
+   */
   baseDelayMs?: number;
+
+  /**
+   * Maximum delay cap in milliseconds.
+   * Default: 30000ms (30 seconds)
+   *
+   * Prevents exponential backoff from producing excessively long delays.
+   */
   maxDelayMs?: number;
+
+  /**
+   * List of error codes that should trigger retry.
+   * Default: [AgentErrorCode.TaskTimeout]
+   *
+   * Only errors in this list will be retried. Other errors will fail immediately.
+   */
   retryableErrors?: AgentErrorCode[];
 }
 
