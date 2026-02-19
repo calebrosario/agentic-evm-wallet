@@ -10,7 +10,8 @@ export interface PendingTransaction {
   gas: bigint | undefined;
   createdAt: number;
   expiresAt: number;
-  status: "pending" | "approved" | "expired" | "executed";
+  status: "pending" | "approved" | "expired" | "executed" | "failed";
+  approvalToken: string;
   executionHash?: Hash;
   errorMessage?: string;
 }
@@ -31,11 +32,17 @@ export class TransactionApprovalManager {
   private pendingTransactions = new Map<string, PendingTransaction>();
 
   private generateId(): string {
-    return `tx_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    const hex = Buffer.from(bytes).toString("hex");
+    return `tx_${hex}`;
   }
 
   private generateApprovalToken(transactionId: string): string {
-    return `token_${transactionId}_${Date.now()}`;
+    const bytes = new Uint8Array(24);
+    crypto.getRandomValues(bytes);
+    const hex = Buffer.from(bytes).toString("hex");
+    return `token_${hex}`;
   }
 
   getTransaction(transactionId: string): PendingTransaction | undefined {
@@ -66,7 +73,8 @@ export class TransactionApprovalManager {
       gas: params.gas,
       createdAt: now,
       expiresAt,
-      status: "pending"
+      status: "pending",
+      approvalToken
     };
 
     this.pendingTransactions.set(transactionId, pendingTx);
@@ -123,8 +131,7 @@ export class TransactionApprovalManager {
       };
     }
 
-    const expectedToken = this.generateApprovalToken(transactionId);
-    if (approvalToken !== expectedToken) {
+    if (approvalToken !== transaction.approvalToken) {
       return {
         success: false,
         transactionId,
@@ -157,19 +164,19 @@ export class TransactionApprovalManager {
 
     if (!transaction) return;
 
-    transaction.status = "approved";
+    transaction.status = "failed";
     transaction.errorMessage = errorMessage;
     this.pendingTransactions.set(transactionId, transaction);
   }
 
   checkTransactionSize(value: bigint): { allowed: boolean; message: string } {
-    const maxValue = Number(process.env.MAX_TRANSACTION_SIZE_USD) || 100;
+    const maxValue = Number(process.env.MAX_TRANSACTION_SIZE_ETH) || 1;
     const valueInEth = Number(value) / 1e18;
 
     if (valueInEth > maxValue) {
       return {
         allowed: false,
-        message: `Transaction value ${valueInEth} ETH exceeds maximum ${maxValue} USD`
+        message: `Transaction value ${valueInEth} ETH exceeds maximum ${maxValue} ETH`
       };
     }
 

@@ -475,9 +475,7 @@ export class WalletTools {
         gasLimit: z.string().optional().describe("Gas limit"),
         maxFeePerGas: z.string().optional().describe("Max fee per gas (wei)"),
         maxPriorityFeePerGas: z.string().optional().describe("Max priority fee (wei)"),
-        transactionId: z
-          .string()
-          .describe("Transaction ID from prepare_transaction (optional if skip approval)")
+        transactionId: z.string().describe("Transaction ID from prepare_transaction (required)")
       },
       async ({
         chainId,
@@ -504,7 +502,7 @@ export class WalletTools {
           };
         }
 
-        const rateLimitCheck = this.rateLimiter.checkTransactionLimit(chainId, to as Address);
+        const rateLimitCheck = await this.rateLimiter.checkTransactionLimit(chainId, to as Address);
         if (!rateLimitCheck.allowed) {
           return {
             content: [
