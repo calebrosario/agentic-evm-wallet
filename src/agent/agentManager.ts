@@ -1,10 +1,10 @@
 import type { Chain } from "viem";
-import { mainnet, polygon } from "viem/chains";
 import type { KeyStoreEntry } from "../key/keyManager";
 import { KeyManager } from "../key/keyManager";
 import { TransactionExecutor } from "../execution/transactionExecutor";
 import { TaskQueue } from "./taskQueue";
 import { Agent } from "./agent";
+import { getChain, getAllSupportedChainIds } from "@/chains/chainConfig";
 import type {
   AgentConfig,
   AgentInfo,
@@ -24,10 +24,6 @@ const SCHEDULER_INTERVAL_MS = 1000;
 export class AgentManager {
   private agents: Map<string, Agent> = new Map();
   private taskQueue: TaskQueue = new TaskQueue();
-  private chains: Map<number, Chain> = new Map([
-    [1, mainnet as Chain],
-    [137, polygon as Chain]
-  ]);
 
   private keyManager: KeyManager;
   private transactionExecutor: TransactionExecutor;

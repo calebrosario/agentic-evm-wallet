@@ -1,6 +1,6 @@
 import type { Address, Chain } from "viem";
 import { http, createPublicClient } from "viem";
-import { mainnet, polygon } from "viem/chains";
+import { getChain, getAllSupportedChainIds } from "@/chains/chainConfig";
 
 export interface GasEstimateParams {
   to: Address;
@@ -19,19 +19,12 @@ export interface GasPriceResult {
 export type OperationType = "transfer" | "contract" | "complex";
 
 export class GasManager {
-  private readonly chains: Map<number, Chain> = new Map([
-    [1, mainnet as Chain],
-    [137, polygon as Chain]
-  ]);
-
-  private getChainConfig(chainId: number) {
-    const config = this.chains.get(chainId);
-    if (!config) {
-      throw new Error(
-        "Invalid chain ID: " + chainId + ". Supported chains: 1 (Ethereum), 137 (Polygon)"
-      );
+  private getChainConfig(chainId: number): Chain {
+    const supportedIds = getAllSupportedChainIds();
+    if (!supportedIds.includes(chainId as any)) {
+      throw new Error(`Invalid chain ID: ${chainId}. Supported chains: ${supportedIds.join(", ")}`);
     }
-    return config;
+    return getChain(chainId as any);
   }
 
   async estimateGas(chainId: number, params: GasEstimateParams): Promise<bigint> {

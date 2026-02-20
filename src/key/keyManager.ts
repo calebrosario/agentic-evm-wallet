@@ -1,8 +1,8 @@
 import type { Address, Chain, Hash, Transaction } from "viem";
 import type { Hex } from "viem";
 import { http, createWalletClient } from "viem";
-import { mainnet, polygon } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
+import { getChain, getAllSupportedChainIds } from "@/chains/chainConfig";
 
 export interface KeyStoreEntry {
   address: Address;
@@ -37,21 +37,14 @@ export interface SignedTransaction {
 }
 
 export class KeyManager {
-  private readonly chains: Map<number, Chain> = new Map([
-    [1, mainnet as Chain],
-    [137, polygon as Chain]
-  ]);
-
   private keyStore: Map<string, KeyStoreEntry> = new Map();
 
   private getChainConfig(chainId: number): Chain {
-    const config = this.chains.get(chainId);
-    if (!config) {
-      throw new Error(
-        "Invalid chain ID: " + chainId + ". Supported chains: 1 (Ethereum), 137 (Polygon)"
-      );
+    const supportedIds = getAllSupportedChainIds();
+    if (!supportedIds.includes(chainId as any)) {
+      throw new Error(`Invalid chain ID: ${chainId}. Supported chains: ${supportedIds.join(", ")}`);
     }
-    return config;
+    return getChain(chainId as any);
   }
 
   generateKey(params: GenerateKeyParams): KeyStoreEntry {

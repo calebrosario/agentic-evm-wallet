@@ -79,7 +79,7 @@ describe("TransactionExecutor", () => {
       const result = await executor.executeTransaction({
         transaction: mockTransaction,
         chainId: 1,
-        keyId: "test-key-1"
+        keyId: mockKey.keyId
       });
 
       expect(result.status).toBe(TransactionStatus.Confirmed);

@@ -1,7 +1,7 @@
 import type { Chain, TransactionRequest, WalletClient, PublicClient, Address } from "viem";
 import { isAddress, http, createPublicClient, createWalletClient } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { mainnet, polygon } from "viem/chains";
+import { CHAINS, getAllSupportedChainIds } from "@/chains/chainConfig";
 import { KeyManager, type KeyStoreEntry } from "../key/keyManager";
 import type {
   ExecuteTransactionParams,
@@ -51,12 +51,7 @@ export class TransactionExecutor {
     rpcUrls?: Record<number, string>;
   }) {
     this.keyManager = options.keyManager;
-    this.chains =
-      options.chains ||
-      new Map([
-        [1, mainnet as Chain],
-        [137, polygon as Chain]
-      ]);
+    this.chains = options.chains || new Map(CHAINS);
     this.rpcUrls = options.rpcUrls;
     this.defaultOptions = options.defaultExecutionOptions || {};
     this.enableEvents = options.enableEvents !== false;
@@ -388,8 +383,9 @@ export class TransactionExecutor {
   private getChainConfig(chainId: number): Chain {
     const chain = this.chains.get(chainId);
     if (!chain) {
+      const supportedIds = getAllSupportedChainIds();
       throw new TransactionExecutionError(
-        `Invalid chain ID: ${chainId}. Configure this chain in the constructor.`,
+        `Invalid chain ID: ${chainId}. Supported chains: ${supportedIds.join(", ")}. Configure this chain in the constructor.`,
         ErrorCode.InvalidKey,
         { chainId }
       );

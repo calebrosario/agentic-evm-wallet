@@ -30,6 +30,13 @@ export interface ApprovalResult {
 
 export class TransactionApprovalManager {
   private pendingTransactions = new Map<string, PendingTransaction>();
+  private timeProvider: () => number = Date.now;
+
+  constructor(timeProvider?: () => number) {
+    if (timeProvider) {
+      this.timeProvider = timeProvider;
+    }
+  }
 
   private generateId(): string {
     const bytes = new Uint8Array(16);
@@ -59,7 +66,7 @@ export class TransactionApprovalManager {
   }): PrepareTransactionResult {
     const transactionId = this.generateId();
     const approvalToken = this.generateApprovalToken(transactionId);
-    const now = Date.now();
+    const now = this.timeProvider();
     const ttl = Number(process.env.TRANSACTION_TTL_MS) || 300000;
     const expiresAt = now + ttl;
 
@@ -87,7 +94,7 @@ export class TransactionApprovalManager {
   }
 
   getPendingTransactions(): PendingTransaction[] {
-    const now = Date.now();
+    const now = this.timeProvider();
     const transactions = Array.from(this.pendingTransactions.values());
 
     return transactions.filter((tx) => {
@@ -120,7 +127,7 @@ export class TransactionApprovalManager {
       };
     }
 
-    const now = Date.now();
+    const now = this.timeProvider();
     if (now > transaction.expiresAt) {
       transaction.status = "expired";
       this.pendingTransactions.set(transactionId, transaction);
@@ -187,7 +194,7 @@ export class TransactionApprovalManager {
   }
 
   clearExpired(): void {
-    const now = Date.now();
+    const now = this.timeProvider();
     for (const [id, tx] of this.pendingTransactions.entries()) {
       if (now > tx.expiresAt && tx.status === "pending") {
         tx.status = "expired";
