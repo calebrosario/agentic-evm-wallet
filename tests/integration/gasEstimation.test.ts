@@ -4,7 +4,7 @@ import { GasManager, GasEstimateParams } from "../../src/gas/gasManager";
 const VITALIK_ADDRESS = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045" as `0x${string}`;
 const WETH_ADDRESS = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" as `0x${string}`;
 
-describe("GasManager Integration Tests - Real World Scenarios", () => {
+describe.skip("GasManager Integration Tests - Real World Scenarios - network dependent", () => {
   let gasManager: GasManager;
 
   beforeAll(() => {
