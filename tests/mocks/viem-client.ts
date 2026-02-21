@@ -189,8 +189,10 @@ export const MOCK_CHAIN = {
   blockExplorers: {
     default: { name: "Mock Explorer", url: "http://localhost" }
   },
+  blockTime: 12000,
+  testnet: true,
   contracts: {}
-} as Chain;
+} as const;
 
 /**
  * Helper to create mock public client
