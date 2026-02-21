@@ -144,7 +144,7 @@ describe.skip("TransactionExecutor - Advanced Tests - requires viem network mock
       const [result1, result2] = await Promise.allSettled([tx1, tx2]);
 
       if (result1.status === "fulfilled" && result2.status === "fulfilled") {
-        expect(result1.value.value).not.toBe(result2.value.value);
+        expect(result1.value).not.toBe(result2.value);
       }
     });
   });

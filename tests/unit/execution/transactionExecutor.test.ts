@@ -3,10 +3,18 @@ import { TransactionExecutor } from "../../../src/execution/transactionExecutor"
 import { KeyManager } from "../../../src/key/keyManager";
 import type { TransactionRequest } from "viem";
 import { ErrorCode, TransactionStatus } from "../../../src/execution/types";
+import {
+  createMockPublicClient,
+  createMockWalletClient,
+  createRpcSpy
+} from "../../mocks/viem-client";
 
 describe("TransactionExecutor", () => {
   let executor: TransactionExecutor;
   let mockKeyManager: KeyManager;
+  let mockPublicClient: any;
+  let mockWalletClient: any;
+  let rpcSpy: any;
 
   const mockKey = {
     keyId: "1:0x1234567890123456789012345678901234567890",
@@ -24,6 +32,10 @@ describe("TransactionExecutor", () => {
   };
 
   beforeEach(() => {
+    rpcSpy = createRpcSpy();
+    mockPublicClient = createMockPublicClient();
+    mockWalletClient = createMockWalletClient(mockKey.address);
+
     mockKeyManager = {
       exportKey: async (keyId) => {
         if (keyId === mockKey.keyId) {
