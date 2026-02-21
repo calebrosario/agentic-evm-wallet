@@ -177,13 +177,14 @@ export class TransactionApprovalManager {
   }
 
   checkTransactionSize(value: bigint): { allowed: boolean; message: string } {
-    const maxValue = Number(process.env.MAX_TRANSACTION_SIZE_ETH) || 1;
-    const valueInEth = Number(value) / 1e18;
+    const maxValueEth = Number(process.env.MAX_TRANSACTION_SIZE_ETH) || 1;
+    const maxValueWei = BigInt(maxValueEth) * 10n ** 18n;
 
-    if (valueInEth > maxValue) {
+    if (value > maxValueWei) {
+      const valueInEth = Number(value) / 1e18;
       return {
         allowed: false,
-        message: `Transaction value ${valueInEth} ETH exceeds maximum ${maxValue} ETH`
+        message: `Transaction value ${valueInEth} ETH exceeds maximum ${maxValueEth} ETH`
       };
     }
 

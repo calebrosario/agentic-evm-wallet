@@ -11,37 +11,64 @@ export interface RateLimitResult {
   resetTime: number;
 }
 
+/**
+ * Promise-based async mutex to replace busy-wait polling
+ * Uses a queue to manage waiting lock acquisitions
+ */
+interface LockState {
+  locked: boolean;
+  queue: Array<() => void>;
+}
+
 export class RateLimiter {
   private requests = new Map<string, number[]>();
-  private locks = new Map<string, () => void>();
+  private lockStates = new Map<string, LockState>();
 
-  async checkLimit(identifier: string, config: RateLimitConfig): Promise<RateLimitResult> {
-    const lockKey = identifier;
-
-    // Wait for existing lock to be released
-    while (this.locks.has(lockKey)) {
-      await new Promise<void>((resolve) => {
-        const existingRelease = this.locks.get(lockKey);
-        if (existingRelease) {
-          // Wait for the existing lock to be released
-          const checkInterval = setInterval(() => {
-            if (!this.locks.has(lockKey) || this.locks.get(lockKey) !== existingRelease) {
-              clearInterval(checkInterval);
-              resolve();
-            }
-          }, 1);
-        } else {
-          resolve();
-        }
-      });
+  /**
+   * Acquire a lock for the given key using async queue-based mutex
+   * Returns a release function that must be called to release the lock
+   */
+  private async acquireLock(key: string): Promise<() => void> {
+    if (!this.lockStates.has(key)) {
+      this.lockStates.set(key, { locked: false, queue: [] });
     }
 
-    // Acquire lock
-    let releaseFn: () => void;
-    const lockPromise = new Promise<void>((resolve) => {
-      releaseFn = resolve;
+    const lockState = this.lockStates.get(key)!;
+
+    // If lock is free, acquire immediately
+    if (!lockState.locked) {
+      lockState.locked = true;
+      return () => this.releaseLock(key);
+    }
+
+    // Lock is held, wait in queue
+    return new Promise((resolve) => {
+      lockState.queue.push(() => {
+        lockState.locked = true;
+        resolve(() => this.releaseLock(key));
+      });
     });
-    this.locks.set(lockKey, releaseFn!);
+  }
+
+  /**
+   * Release a lock and wake up the next waiter in queue
+   */
+  private releaseLock(key: string): void {
+    const lockState = this.lockStates.get(key);
+    if (!lockState) return;
+
+    const nextWaiter = lockState.queue.shift();
+    if (nextWaiter) {
+      // Wake up next waiter - they will set locked=true
+      nextWaiter();
+    } else {
+      // No waiters, mark as free
+      lockState.locked = false;
+    }
+  }
+
+  async checkLimit(identifier: string, config: RateLimitConfig): Promise<RateLimitResult> {
+    const release = await this.acquireLock(identifier);
 
     try {
       const now = Date.now();
@@ -69,19 +96,17 @@ export class RateLimiter {
         resetTime: now + config.windowMs
       };
     } finally {
-      // Release lock
-      this.locks.delete(lockKey);
-      releaseFn!();
+      release();
     }
   }
 
   clear(identifier?: string): void {
     if (identifier) {
       this.requests.delete(identifier);
-      this.locks.delete(identifier);
+      this.lockStates.delete(identifier);
     } else {
       this.requests.clear();
-      this.locks.clear();
+      this.lockStates.clear();
     }
   }
 }
@@ -91,7 +116,7 @@ export class AgentRateLimiter {
   private readonly dailyLimit: number;
   private readonly hourlyLimit: number;
   private readonly transactionTracker = new Map<string, number[]>();
-  private readonly locks = new Map<string, () => void>();
+  private readonly lockStates = new Map<string, LockState>();
 
   constructor() {
     this.limiter = new RateLimiter();
@@ -106,41 +131,54 @@ export class AgentRateLimiter {
     return await this.limiter.checkLimit(identifier, { maxRequests, windowMs });
   }
 
-  async checkTransactionLimit(chainId: number, address: Address): Promise<RateLimitResult> {
-    const identifier = `${chainId}:${address}`;
-
-    while (this.locks.has(identifier)) {
-      await new Promise<void>((resolve) => {
-        const existingRelease = this.locks.get(identifier);
-        if (existingRelease) {
-          const checkInterval = setInterval(() => {
-            if (!this.locks.has(identifier) || this.locks.get(identifier) !== existingRelease) {
-              clearInterval(checkInterval);
-              resolve();
-            }
-          }, 1);
-        } else {
-          resolve();
-        }
-      });
+  /**
+   * Acquire a lock for the given key using async queue-based mutex
+   * Returns a release function that must be called to release the lock
+   */
+  private async acquireLock(key: string): Promise<() => void> {
+    if (!this.lockStates.has(key)) {
+      this.lockStates.set(key, { locked: false, queue: [] });
     }
 
-    let releaseFn: () => void;
-    this.locks.set(identifier, (() => {}) as () => void);
-    const lockPromise = new Promise<void>((resolve) => {
-      releaseFn = resolve;
+    const lockState = this.lockStates.get(key)!;
+
+    if (!lockState.locked) {
+      lockState.locked = true;
+      return () => this.releaseLock(key);
+    }
+
+    return new Promise((resolve) => {
+      lockState.queue.push(() => {
+        lockState.locked = true;
+        resolve(() => this.releaseLock(key));
+      });
     });
-    this.locks.set(identifier, releaseFn!);
+  }
+
+  private releaseLock(key: string): void {
+    const lockState = this.lockStates.get(key);
+    if (!lockState) return;
+
+    const nextWaiter = lockState.queue.shift();
+    if (nextWaiter) {
+      nextWaiter();
+    } else {
+      lockState.locked = false;
+    }
+  }
+
+  async checkTransactionLimit(chainId: number, address: Address): Promise<RateLimitResult> {
+    const identifier = `${chainId}:${address}`;
+    const release = await this.acquireLock(identifier);
 
     try {
       const now = Date.now();
-      const transactions = this.transactionTracker.get(identifier) || [];
-
       const oneHourAgo = now - 3600000;
       const oneDayAgo = now - 86400000;
 
-      const recentHour = transactions.filter((timestamp) => timestamp > oneHourAgo);
-      const recentDay = transactions.filter((timestamp) => timestamp > oneDayAgo);
+      const allTransactions = this.transactionTracker.get(identifier) || [];
+      const recentHour = allTransactions.filter((timestamp) => timestamp > oneHourAgo);
+      const recentDay = allTransactions.filter((timestamp) => timestamp > oneDayAgo);
 
       if (recentHour.length >= this.hourlyLimit) {
         const oldestTimestamp = recentHour[0];
@@ -160,20 +198,19 @@ export class AgentRateLimiter {
         };
       }
 
-      recentHour.push(now);
-      this.transactionTracker.set(identifier, recentHour);
+      const allTx = [...recentDay, now];
+      this.transactionTracker.set(identifier, allTx);
+
+      const newHourlyCount = recentHour.length + 1;
+      const newDailyCount = recentDay.length + 1;
 
       return {
         allowed: true,
-        remaining: Math.min(
-          this.hourlyLimit - recentHour.length,
-          this.dailyLimit - recentDay.length
-        ),
+        remaining: Math.min(this.hourlyLimit - newHourlyCount, this.dailyLimit - newDailyCount),
         resetTime: now + 3600000
       };
     } finally {
-      this.locks.delete(identifier);
-      releaseFn!();
+      release();
     }
   }
 
@@ -181,10 +218,10 @@ export class AgentRateLimiter {
     if (chainId && address) {
       const identifier = `${chainId}:${address}`;
       this.transactionTracker.delete(identifier);
-      this.locks.delete(identifier);
+      this.lockStates.delete(identifier);
     } else {
       this.transactionTracker.clear();
-      this.locks.clear();
+      this.lockStates.clear();
     }
   }
 }
