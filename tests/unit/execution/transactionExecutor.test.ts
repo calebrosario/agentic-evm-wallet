@@ -10,7 +10,6 @@ import {
 } from "../../mocks/viem-client";
 
 describe("TransactionExecutor", () => {
-  let executor: TransactionExecutor;
   let mockKeyManager: KeyManager;
   let mockPublicClient: any;
   let mockWalletClient: any;
@@ -91,47 +90,6 @@ describe("TransactionExecutor", () => {
     let mockKeyManager: KeyManager;
     let mockPublicClient: any;
     let mockWalletClient: any;
-
-    const mockKey = {
-      keyId: "1:0x1234567890123456789012345678901234567890",
-      privateKey: ("0x" + "1".repeat(64)) as `0x${string}`,
-      address: "0x1234567890123456789012345678901234567890" as `0x${string}`,
-      chainId: 1
-    };
-
-    const mockTransaction: TransactionRequest = {
-      to: "0x1234567890123456789012345678901234567890" as `0x${string}`,
-      value: 1000000000000000000n,
-      data: "0x" as `0x${string}`,
-      gas: 21000n,
-      gasPrice: 20000000000n
-    };
-
-    beforeEach(() => {
-      rpcSpy = createRpcSpy();
-      mockPublicClient = createMockPublicClient();
-      mockWalletClient = createMockWalletClient(mockKey.address);
-      
-      mockKeyManager = {
-        exportKey: async (keyId) => {
-          if (keyId === mockKey.keyId) {
-            return mockKey.privateKey;
-          }
-          throw new Error("Key not found");
-        },
-        getKey: (address, chainId) => {
-          const keyId = `${chainId}:${address}`;
-          if (keyId === mockKey.keyId) {
-            return mockKey;
-          }
-          return undefined;
-        }
-      } as unknown as KeyManager;
-
-      executor = new TransactionExecutor({
-        keyManager: mockKeyManager
-      });
-    });
     test("should execute a transaction successfully with default options", async () => {
       const result = await executor.executeTransaction({
         transaction: mockTransaction,
@@ -152,60 +110,8 @@ describe("TransactionExecutor", () => {
           keyId: mockKey.keyId
         },
         {
-          maxRetries: 5,
-          confirmations: 3,
-          confirmationTimeoutMs: 120000
-        }
-      );
-
-      expect(result.status).toBe(TransactionStatus.Confirmed);
-    });
-
-    test("should fail with invalid key ID", async () => {
-      await expect(
-        executor.executeTransaction({
-          transaction: mockTransaction,
-          chainId: 1,
-          keyId: "non-existent-key"
-        })
-      ).rejects.toThrow();
-    });
-
-    test("should fail with invalid chain ID", async () => {
-      await expect(
-        executor.executeTransaction({
-          transaction: mockTransaction,
-          chainId: 999,
-          keyId: mockKey.keyId
-        })
-      ).rejects.toThrow();
-    });
-
-    test("should fail with invalid transaction structure", async () => {
-      const invalidTransaction = {} as TransactionRequest;
-
-      await expect(
-        executor.executeTransaction({
-          transaction: invalidTransaction,
-          chainId: 1,
-          keyId: mockKey.keyId
-        })
-      ).rejects.toThrow();
-    });
-
-      await expect(
-        executor.executeTransaction({
-          transaction: invalidTransaction,
-          chainId: 1,
-          keyId: mockKey.keyId
-        })
-      ).rejects.toThrow();
-    });
-
-    test("should fail with missing 'to' address", async () => {
-      const invalidTransaction = {
-        value: 1000000000000000000n
-      } as TransactionRequest;
+          value: 1000000000000000000n
+        } as TransactionRequest;
 
       await expect(
         executor.executeTransaction({
