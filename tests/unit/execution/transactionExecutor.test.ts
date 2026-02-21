@@ -6,7 +6,8 @@ import { ErrorCode, TransactionStatus } from "../../../src/execution/types";
 import {
   createMockPublicClient,
   createMockWalletClient,
-  createRpcSpy
+  createRpcSpy,
+  MOCK_CHAIN
 } from "../../mocks/viem-client";
 
 describe("TransactionExecutor", () => {
@@ -53,7 +54,8 @@ describe("TransactionExecutor", () => {
     } as unknown as KeyManager;
 
     executor = new TransactionExecutor({
-      keyManager: mockKeyManager
+      keyManager: mockKeyManager,
+      chains: new Map([[1, MOCK_CHAIN]])
     });
   });
 
@@ -86,7 +88,7 @@ describe("TransactionExecutor", () => {
     });
   });
 
-  describe.skip("executeTransaction - requires viem network mocking", () => {
+  describe("executeTransaction - requires viem network mocking", () => {
     test("should execute a transaction successfully with default options", async () => {
       const result = await executor.executeTransaction({
         transaction: mockTransaction,
@@ -210,7 +212,7 @@ describe("TransactionExecutor", () => {
     });
   });
 
-  describe.skip("retry logic - requires viem network mocking", () => {
+  describe("retry logic", () => {
     test("should retry on transient failures", async () => {
       let attemptCount = 0;
       const retryExecutor = new TransactionExecutor({
@@ -307,7 +309,7 @@ describe("TransactionExecutor", () => {
     });
   });
 
-  describe.skip("event system - requires viem network mocking", () => {
+  describe("event system", () => {
     test("should emit signed event", async () => {
       const events: unknown[] = [];
       const eventExecutor = new TransactionExecutor({
@@ -437,7 +439,7 @@ describe("TransactionExecutor", () => {
     });
   });
 
-  describe.skip("transaction result - requires viem network mocking", () => {
+  describe("transaction result", () => {
     test("should return transaction hash", async () => {
       const result = await executor.executeTransaction({
         transaction: mockTransaction,
@@ -523,7 +525,7 @@ describe("TransactionExecutor", () => {
     });
   });
 
-  describe.skip("edge cases - requires viem network mocking", () => {
+  describe("edge cases", () => {
     test("should handle zero value transaction", async () => {
       const zeroValueTransaction = {
         ...mockTransaction,
@@ -585,7 +587,7 @@ describe("TransactionExecutor", () => {
     });
   });
 
-  describe.skip("timeout handling - requires viem network mocking", () => {
+  describe("timeout handling", () => {
     test("should timeout on confirmation delay", async () => {
       const timeoutExecutor = new TransactionExecutor({
         keyManager: mockKeyManager,
@@ -604,7 +606,7 @@ describe("TransactionExecutor", () => {
     });
   });
 
-  describe.skip("off event listener - requires debugging of off() implementation", () => {
+  describe("off event listener", () => {
     test("should remove event listener", async () => {
       const events: unknown[] = [];
       const eventExecutor = new TransactionExecutor({
