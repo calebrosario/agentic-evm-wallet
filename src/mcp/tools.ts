@@ -6,7 +6,7 @@ import { GasManager } from "@/gas/gasManager";
 import { KeyManager } from "@/key/keyManager";
 import { TransactionExecutor } from "@/execution/transactionExecutor";
 import { getAllChainInfo } from "@/chains/registry";
-import { getChain, getAllSupportedChainIds, isChainSupported } from "@/chains/chainConfig";
+import { getChainOrThrow, getAllSupportedChainIds, isChainSupported } from "@/chains/chainConfig";
 import { AgentRateLimiter } from "@/security/rateLimiter";
 import { TransactionApprovalManager } from "@/security/transactionApproval";
 import {
@@ -102,7 +102,7 @@ export class WalletTools {
             isError: true
           };
         }
-        const chain = getChain(chainId as any);
+        const chain = getChainOrThrow(chainId);
         return {
           content: [
             {
@@ -147,7 +147,7 @@ export class WalletTools {
         }
         try {
           const wallet = await this.walletManager.createWallet(chainId);
-          const chain = getChain(chainId as any);
+          const chain = getChainOrThrow(chainId);
           return {
             content: [
               {
@@ -204,7 +204,7 @@ export class WalletTools {
         }
         try {
           const wallet = await this.walletManager.importWallet({ privateKey, chainId });
-          const chain = getChain(chainId as any);
+          const chain = getChainOrThrow(chainId);
           return {
             content: [
               {
@@ -267,7 +267,7 @@ export class WalletTools {
             chainId,
             tokenAddress as Address | undefined
           );
-          const chain = getChain(chainId as any);
+          const chain = getChainOrThrow(chainId);
           const formatted = (Number(balance) / 1e18).toFixed(6);
           return {
             content: [
@@ -326,7 +326,7 @@ export class WalletTools {
         }
         try {
           const address = await this.walletManager.getWalletAddress(chainId);
-          const chain = getChain(chainId as any);
+          const chain = getChainOrThrow(chainId);
           return {
             content: [
               {
