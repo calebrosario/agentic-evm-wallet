@@ -40,6 +40,38 @@ bun install
 bun run build
 ```
 
+## Quick Start
+
+Get started in under 2 minutes:
+
+```bash
+# 1. Install dependencies
+bun install
+
+# 2. Clone repository
+git clone https://github.com/calebrosario/agentic-evm-wallet.git
+cd agentic-evm-wallet
+
+# 3. Run smoke test (validates MVP functionality)
+bun run smoke-test
+
+# 4. Start MCP server for Claude Desktop
+bun run mcp
+```
+
+### What the smoke test validates:
+
+- ✅ All supported chains are configured
+- ✅ Wallet creation works on Ethereum and Polygon
+- ✅ Wallet manager has all required methods
+- ✅ Gas manager has required methods
+
+If the smoke test passes, your environment is ready for:
+
+1. **Using as a library** → Import and call wallet functions directly
+2. **Using MCP server** → Configure Claude Desktop (see below)
+3. **Running examples** → Check `examples/` directory for working code
+
 ## MCP Server Setup for Claude Desktop
 
 ### 1. Configure Claude Desktop
@@ -157,7 +189,41 @@ agentic-evm-wallet/
 └── examples/       # Usage examples
 ```
 
-## Development
+## Troubleshooting
+
+### MCP Server Issues
+
+**Problem:** MCP server starts but Claude Desktop doesn't see tools
+**Solutions:**
+
+- Verify Claude Desktop config path is correct for your OS
+- Check that the path in config matches the actual file location
+- Restart Claude Desktop after updating config
+- Check Claude Desktop logs for MCP connection errors
+
+**Problem:** "Module not found" or "Cannot import X"
+**Solutions:**
+
+- Run `bun install` to ensure all dependencies are installed
+- Check that you're in the project root directory
+- Run `bun run build` before starting MCP server
+
+### Wallet Operations
+
+**Problem:** "Invalid key ID format: expected 'chainId:address'"
+**Solution:** This is an internal test fixture issue - not a user problem. If you see this in production, report as a bug.
+
+**Problem:** Transaction fails with "Insufficient funds for gas"
+**Solution:** Ensure wallet has enough ETH to cover gas + transaction value. Run `bun run faucet` to fund test wallets.
+
+**Problem:** RPC connection timeout or "request failed"
+**Solutions:**
+
+- Network congestion: Wait and retry
+- Custom RPC endpoint: Try a different RPC URL in `.env`
+- Check `src/chains/chainConfig.ts` for default RPC configuration
+
+### Development
 
 ```bash
 # Install dependencies
@@ -196,9 +262,38 @@ bun run mcp
 - **Monitor transaction limits** to prevent unauthorized transfers
 - **Key storage** is encrypted in-memory (non-persistent by design)
 
-## License
+## Security Considerations for Production
 
-MIT
+### Key Management
+
+- **Never share private keys**: Private keys give full control over wallet funds
+- **Use environment variables**: Store sensitive values in `.env` file, never commit it
+- **Key rotation**: Periodically rotate keys for production deployments
+- **Hardware wallets**: For high-value wallets, consider HSM/TEE integration
+
+### Transaction Approval
+
+- **Two-step approval**: Enable `MAX_TRANSACTION_SIZE_ETH` and use approval workflow for large transfers
+- **Review pending transactions**: Check pending list before authorizing
+- **Transaction limits**: Configure `MAX_TRANSACTIONS_PER_HOUR` and `MAX_TRANSACTIONS_PER_DAY` as appropriate
+
+### Rate Limiting
+
+- **Configure limits**: Set `RATE_LIMIT_MAX_REQUESTS` based on expected traffic
+- **Monitor limits**: Use `get_rate_limit_status` tool to track usage
+- **Agent isolation**: Each agent should use its own wallet address
+
+### Network Security
+
+- **RPC endpoints**: Use reputable RPC providers or self-hosted nodes
+- **TLS verification**: Ensure RPC endpoints use HTTPS
+- **Chain IDs**: Always validate chain IDs to prevent chain confusion attacks
+
+### MCP Server
+
+- **Authentication**: Currently no auth - run in secure environment only
+- **Input validation**: All inputs are validated via Zod schemas
+- **Audit logs**: Review MCP logs for unusual activity patterns
 
 ## Contributing
 
