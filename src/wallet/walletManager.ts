@@ -1,8 +1,8 @@
 import type { Address, Chain } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { http, createPublicClient } from "viem";
-import { mainnet, polygon } from "viem/chains";
 import { randomBytes } from "node:crypto";
+import { getChain, getAllSupportedChainIds } from "@/chains/chainConfig";
 
 export interface AgentWallet {
   address: Address;
@@ -13,19 +13,32 @@ export interface AgentWallet {
 export class WalletManager {
   private wallets: Map<number, AgentWallet> = new Map();
 
-  private readonly chains: Map<number, Chain> = new Map([
-    [1, mainnet as Chain],
-    [137, polygon as Chain]
-  ]);
-
-  private getChainConfig(chainId: number) {
-    const config = this.chains.get(chainId);
-    if (!config) {
+  private getChainConfig(chainId: number): Chain {
+    const supportedIds = getAllSupportedChainIds();
+    if (!supportedIds.includes(chainId as any)) {
       throw new Error(
-        "Invalid chain ID: " + chainId + ". Supported chains: 1 (Ethereum), 137 (Polygon)"
+        `Invalid chain ID: ${chainId}. Supported chains: ${supportedIds
+          .map((id) => `${id} (${this.getChainName(id)})`)
+          .join(", ")}`
       );
     }
-    return config;
+    return getChain(chainId as any);
+  }
+
+  private getChainName(chainId: number): string {
+    const names: Record<number, string> = {
+      1: "Ethereum",
+      56: "BNB Smart Chain",
+      137: "Polygon",
+      42161: "Arbitrum One",
+      10: "Optimism",
+      43114: "Avalanche C-Chain",
+      8453: "Base",
+      324: "zkSync Era",
+      250: "Fantom",
+      100: "Gnosis"
+    };
+    return names[chainId] || "Unknown";
   }
 
   async createWallet(chainId: number): Promise<AgentWallet> {
