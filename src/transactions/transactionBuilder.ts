@@ -1,7 +1,7 @@
 import type { Address, Chain, Account, TransactionRequest } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { http, createPublicClient, createWalletClient } from "viem";
-import { mainnet, polygon } from "viem/chains";
+import { getChain, getAllSupportedChainIds } from "@/chains/chainConfig";
 
 export interface BuildTransactionParams {
   to: Address;
@@ -13,11 +13,6 @@ export interface BuildTransactionParams {
 }
 
 export class TransactionBuilder {
-  private readonly chains: Map<number, Chain> = new Map([
-    [1, mainnet as Chain],
-    [137, polygon as Chain]
-  ]);
-
   private publicClientFactory: typeof createPublicClient = createPublicClient;
   private walletClientFactory: typeof createWalletClient = createWalletClient;
 
@@ -33,14 +28,12 @@ export class TransactionBuilder {
     }
   }
 
-  private getChainConfig(chainId: number) {
-    const config = this.chains.get(chainId);
-    if (!config) {
-      throw new Error(
-        "Invalid chain ID: " + chainId + ". Supported chains: 1 (Ethereum), 137 (Polygon)"
-      );
+  private getChainConfig(chainId: number): Chain {
+    const supportedIds = getAllSupportedChainIds();
+    if (!supportedIds.includes(chainId as any)) {
+      throw new Error(`Invalid chain ID: ${chainId}. Supported chains: ${supportedIds.join(", ")}`);
     }
-    return config;
+    return getChain(chainId as any);
   }
 
   private isValidAddress(address: Address): boolean {

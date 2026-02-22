@@ -1,8 +1,8 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import { TransactionExecutor } from "../../../src/execution/transactionExecutor";
-import { KeyManager } from "../../../src/key/keyManager";
+import { TransactionExecutor } from "../../src/execution/transactionExecutor";
+import { KeyManager } from "../../src/key/keyManager";
 import type { TransactionRequest } from "viem";
-import { TransactionStatus } from "../../../src/execution/types";
+import { TransactionStatus } from "../../src/execution/types";
 
 describe("Transaction Execution - Integration Tests", () => {
   let executor: TransactionExecutor;
